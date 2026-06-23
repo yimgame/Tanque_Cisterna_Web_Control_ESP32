@@ -28,7 +28,7 @@ Con una esp32 dos sensores ultrasonicos y un relay manejamos el motor de una bom
 Una vez compilado en la ESP32 te da la ip para conectarte, lo normal es que la asigne el dhcp de tu router
 
 
-El projecto se encuentra simulado en wolwi
+El proyecto se encuentra simulado en wolwi
 
 
 https://wokwi.com/projects/467575637641711617
