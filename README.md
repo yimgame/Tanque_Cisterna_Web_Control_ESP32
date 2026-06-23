@@ -46,8 +46,8 @@ Just coding 4 fun !!!
 https://gemini.google.com/app/cda3b56294498d7e
 
 
-![alt text](image.png)
+![alt text](wokwi-simulator.png)
 
-![alt text](image-1.png)
+![alt text](arduino-run.png)
 
-![alt text](image-2.png)
+![alt text](app.png)
