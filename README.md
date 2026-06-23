@@ -1,20 +1,18 @@
 # Tanque con Cisterna, relay de bomba controlado por ESP32
+
 Con una esp32 dos sensores ultrasonicos y un relay manejamos el motor de una bomba y vemos el estado del tanque en tiempo real en un servidor web hosteado en la misma ESP32
 
-Setup
+**[Una ESP32 yo use una NodeMCU 32S o similar](https://listado.mercadolibre.com.ar/esp32)**
 
-Una ESP32 yo use una NodeMCU 32S creo...
-Dos sendores ultrasonicos para la cisterna y el tanque
-Un relay de 5v 10amp 220v o la tension que manejen en su lugar
+**[Dos sendores ultrasonicos para la cisterna y el tanque](https://listado.mercadolibre.com.ar/sensor-ultrasonico?sb=all_mercadolibre#D[A:sensor%20ultrasonico])**
 
-Conectan la ESP32 al usb o lo que sea que usen para comunicarse
+**[Un relay de 5v 10amp 220v o la tension que manejen en su lugar](https://listado.mercadolibre.com.ar/relay-3.3v-220v#D[A:relay%203.3v%20220v])**
 
-Los drivers usb que necesiten (la IA es su amiga)
-
-
+ 
 1. Instalan y abren **[Arduino IDE](https://docs.arduino.cc/software/ide/)**.
-2. Si no consiguen comunicarse con la Esp32 instalan el driver **[WCH CH340 Driver](https://www.tecneu.com/blogs/tutoriales-de-electronica/guia-paso-a-paso-para-instalar-el-driver-ch340g-en-windows-y-mac?srsltid=AfmBOorWYHYStt433QoR3n1FMt2kGe9WqyiUDfcd9x9y8EoXX6WNAXF_)** o el **[Silicon Labs CP210x](https://community.silabs.com/s/question/0D58Y00008K88dCSAR/how-to-download-cp210x-usb-to-uart-bridge-vcp-drivers?language=es)**
-3. Editan el ssid y la password de su wifi
+2. Conectan la ESP32 al usb o lo montan sobre el programador si tuvieran
+3. Si no consiguen comunicarse con la Esp32 instalan el driver **[WCH CH340 Driver](https://www.tecneu.com/blogs/tutoriales-de-electronica/guia-paso-a-paso-para-instalar-el-driver-ch340g-en-windows-y-mac?srsltid=AfmBOorWYHYStt433QoR3n1FMt2kGe9WqyiUDfcd9x9y8EoXX6WNAXF_)** o el **[Silicon Labs CP210x](https://community.silabs.com/s/question/0D58Y00008K88dCSAR/how-to-download-cp210x-usb-to-uart-bridge-vcp-drivers?language=es)**
+4. Editan el ssid y la password de su wifi
   
     // ⚠️ CAMBIA ESTO CON LOS DATOS DE TU CASA ⚠️
    
