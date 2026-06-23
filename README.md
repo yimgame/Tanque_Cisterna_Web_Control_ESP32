@@ -24,6 +24,13 @@ El projecto se encuentra simulado en wolwi
 
 https://wokwi.com/projects/467575637641711617
 
+Codifico: Gemini
+Guia espiritual: Yim
+
+Just coding 4 fun !!!
+
+https://gemini.google.com/app/cda3b56294498d7e
+
 ![alt text](image.png)
 
 ![alt text](image-1.png)
