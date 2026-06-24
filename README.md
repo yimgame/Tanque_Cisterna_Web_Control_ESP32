@@ -4,7 +4,7 @@ Con una esp32 dos sensores ultrasonicos y un relay manejamos el motor de una bom
 
 **[Una ESP32 yo use una NodeMCU 32S o similar](https://listado.mercadolibre.com.ar/esp32)**
 
-**[Dos sendores ultrasonicos para la cisterna y el tanque](https://listado.mercadolibre.com.ar/sensor-ultrasonico?sb=all_mercadolibre#D[A:sensor%20ultrasonico])**
+**[Dos sensores ultrasonicos para la cisterna y el tanque](https://listado.mercadolibre.com.ar/sensor-ultrasonico?sb=all_mercadolibre#D[A:sensor%20ultrasonico])**
 
 **[Un relay de 5v 10amp 220v o la tension que manejen en su lugar](https://listado.mercadolibre.com.ar/relay-3.3v-220v#D[A:relay%203.3v%20220v])**
 
