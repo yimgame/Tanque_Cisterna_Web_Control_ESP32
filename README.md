@@ -50,4 +50,4 @@ https://gemini.google.com/app/cda3b56294498d7e
 
 ![alt text](arduino-run.png)
 
-![alt text](app.png)
+![alt text](app.jpg)
