@@ -2,8 +2,11 @@
 #include <ESPmDNS.h>
 
 // ⚠️ CAMBIA ESTO CON LOS DATOS DE TU CASA ⚠️
-const char* ssid = "EL_NOMBRE_DE_TU_WIFI";
-const char* password = "TU_CONTRASEÑA_DEL_WIFI";
+//const char* ssid = "EL_NOMBRE_DE_TU_WIFI";
+//const char* password = "TU_CONTRASEÑA_DEL_WIFI";
+
+const char* ssid = "Tu Wifi";
+const char* password = "Tu Password";
 
 // Pines Cisterna (Abajo)
 const int PIN_TRIG_CISTERNA = 5;
@@ -149,10 +152,21 @@ void loop() {
         if (c == '\n') {
           if (currentLine.length() == 0) {
             
-            // Procesar acciones de los botones
-            if (request.indexOf("GET /ENCENDER") != -1) { modoManual = 1; bloqueoSeguridad = false; }
-            if (request.indexOf("GET /APAGAR") != -1) { modoManual = 2; }
-            if (request.indexOf("GET /AUTO") != -1) { modoManual = 0; bloqueoSeguridad = false; }
+            // --- FILTRO DE SEGURIDAD PARA BOTONES MANUALES ---
+            if (request.indexOf("GET /ENCENDER") != -1) { 
+              // Solo permite cambiar a encendido manual si el tanque NO está lleno Y la cisterna SÍ tiene agua
+              if (distTanque > TANQUE_LLENO && cisternaTieneAgua) {
+                modoManual = 1; 
+                bloqueoSeguridad = false; 
+              }
+            }
+            if (request.indexOf("GET /APAGAR") != -1) { 
+              modoManual = 2; 
+            }
+            if (request.indexOf("GET /AUTO") != -1) { 
+              modoManual = 0; 
+              bloqueoSeguridad = false; 
+            }
 
             client.println("HTTP/1.1 200 OK");
             client.println("Content-type:text/html");
@@ -162,9 +176,8 @@ void loop() {
             client.println("<!DOCTYPE html><html><head><meta charset='UTF-8'>");
             client.println("<meta name='viewport' content='width=device-width, initial-scale=1.0'>");
             client.println("<title>Monitor de Agua Pro</title>");
-            client.println("<style>body{font-family:Arial,sans-serif;text-align:center;background:#f4f4f9;padding:10px;} .card{background:white;padding:15px;border-radius:15px;margin:12px auto;max-width:400px;box-shadow:0 4px 8px rgba(0,0,0,0.1);} h1{color:#0288d1;} .status{font-weight:bold;padding:10px;border-radius:5px;margin-top:10px;} .on{background:#c8e6c9;color:#256029;} .off{background:#ffcdd2;color:#c62828;} .alert{background:#ffe0b2;color:#e65100;} .val{font-size:24px;color:#0288d1;font-weight:bold;} .btn{display:inline-block;padding:10px 20px;margin:5px;font-size:16px;font-weight:bold;color:white;text-decoration:none;border-radius:5px;box-shadow:0 2px 4px rgba(0,0,0,0.2);} .btn-on{background:#4caf50;} .btn-off{background:#f44336;} .btn-auto{background:#2196f3;}</style>");
+            client.println("<style>body{font-family:Arial,sans-serif;text-align:center;background:#f4f4f9;padding:10px;} .card{background:white;padding:15px;border-radius:15px;margin:12px auto;max-width:400px;box-shadow:0 4px 8px rgba(0,0,0,0.1);} h1{color:#0288d1;} .status{font-weight:bold;padding:10px;border-radius:5px;margin-top:10px;} .on{background:#c8e6c9;color:#256029;} .off{background:#ffcdd2;color:#c62828;} .alert{background:#ffe0b2;color:#e65100;} .val{font-size:24px;color:#0288d1;font-weight:bold;} .btn{display:inline-block;width:125px;box-sizing:border-box;text-align:center;padding:10px 5px;margin:5px;font-size:14px;font-weight:bold;color:white;text-decoration:none;border-radius:5px;box-shadow:0 2px 4px rgba(0,0,0,0.2);} .btn-on{background:#4caf50;} .btn-off{background:#f44336;} .btn-auto{background:#2196f3;}</style>");
             
-            // Auto-refresh cada 3 segundos solo si la bomba está apagada o andando normal (así no interrumpe el botón)
             client.println("<script>setInterval(function(){ if(!window.location.search) { location.reload(); } }, 3000);</script>");
             client.println("</head><body>");
             client.println("<h1>💧 Control de Agua Inteligente 💧</h1>");
@@ -172,7 +185,6 @@ void loop() {
             client.println("<div class='card'><h2>Tanque Superior (1000L)</h2><p class='val'>" + String(pctTanque) + " %</p><p>Aprox: <strong>" + String(litrosTanque) + " Litros</strong></p></div>");
             client.println("<div class='card'><h2>Cisterna (500L)</h2><p class='val'>" + String(pctCisterna) + " %</p><p>Aprox: <strong>" + String(litrosCisterna) + " Litros</strong></p></div>");
             
-            // Card Estado de la Bomba y Tiempos
             client.println("<div class='card'><h2>Estado de la Bomba</h2>");
             if (bloqueoSeguridad) {
               client.println("<div class='status off alert'>🚨 BLOQUEO DE SEGURIDAD (Excedió 10 min)</div>");
@@ -189,10 +201,9 @@ void loop() {
             client.println("<p style='font-size:12px; color:#666;'>Modo actual: " + modoTexto + "</p>");
             client.println("</div>");
 
-            // Card de Controles de Emergencia
             client.println("<div class='card'><h2>Controles Manuales</h2>");
             client.println("<a href='/ENCENDER' class='btn btn-on'>ARRANQUE</a>");
-            client.println("<a href='/APAGAR' class='btn btn-off'>PARADA MANUAL</a>");
+            client.println("<a href='/APAGAR' class='btn btn-off'>PARADA</a>");
             client.println("<a href='/AUTO' class='btn btn-auto'>AUTO / RESET</a>");
             client.println("</div></body></html>");
             break;
