@@ -3,6 +3,11 @@ setlocal ENABLEDELAYEDEXPANSION
 
 cd /d "%~dp0"
 set "EXIT_CODE=0"
+set "TARGET_BRANCH=main"
+set "TARGET_REMOTE=origin"
+
+git rev-parse --is-inside-work-tree >nul 2>&1
+if errorlevel 1 goto :not_repo
 
 echo [1/6] Estado actual...
 git status
@@ -14,8 +19,8 @@ git add .
 if errorlevel 1 goto :error
 
 echo.
-echo [3/6] Asegurando rama main...
-git branch -M main
+echo [3/6] Asegurando rama %TARGET_BRANCH%...
+git branch -M %TARGET_BRANCH%
 if errorlevel 1 goto :error
 
 echo.
@@ -33,8 +38,8 @@ git commit -m "%COMMIT_MSG%"
 if errorlevel 1 goto :error
 
 echo.
-echo [6/6] Enviando a origin/main...
-git push -u origin main
+echo [6/6] Enviando a %TARGET_REMOTE%/%TARGET_BRANCH%...
+git push -u %TARGET_REMOTE% %TARGET_BRANCH%
 if errorlevel 1 goto :error
 
 goto :summary
@@ -45,6 +50,12 @@ echo.
 echo ERROR: Fallo un comando git. Codigo !EXIT_CODE!.
 echo Revisa los mensajes de arriba.
 goto :summary
+
+:not_repo
+set "EXIT_CODE=1"
+echo.
+echo ERROR: Ejecuta este archivo dentro de un repositorio Git.
+goto :end
 
 :summary
 echo.
