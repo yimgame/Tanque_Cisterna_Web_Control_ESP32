@@ -51,6 +51,7 @@ int tanqueDistanciaVacioCm = TANQUE_DISTANCIA_VACIO_DEF;
 // El tiempo de seguridad se calcula con la capacidad útil y el caudal,
 // pero conservando un mínimo para evitar cortes demasiado agresivos por ruido.
 const unsigned long TIEMPO_SEGURIDAD_MINIMO_BOMBA_MS = 10UL * 60UL * 1000UL;
+const unsigned long TIEMPO_SEGURIDAD_MINIMO_CALCULADO_MS = 60UL * 1000UL;
 const float FACTOR_SEGURIDAD_BOMBA = 1.2f;
 
 // --- VARIABLES DE ESTADO ---
@@ -403,23 +404,18 @@ void borrarTodoPersistido() {
   mensajeConfig = "Todo fue restablecido a valores por defecto.";
 }
 
-unsigned long calcularTiempoMaximoBombaMs(int capacidadCisternaLitros, int capacidadTanqueLitros) {
+unsigned long calcularTiempoMaximoBombaMs(int litrosUtiles) {
   if (caudalBombaLpm <= 0.0f) {
     return TIEMPO_SEGURIDAD_MINIMO_BOMBA_MS;
   }
 
-  int litrosUtiles = (int)(capacidadCisternaLitros * (100 - cisternaReservaPorcentaje) / 100.0f);
-  if (capacidadTanqueLitros > 0) {
-    int litrosNecesariosTanque = max(capacidadTanqueLitros - tanqueObjetivoLitros, 0);
-    litrosUtiles = min(litrosUtiles, max(litrosNecesariosTanque, 1));
-  }
   if (litrosUtiles <= 0) {
     return TIEMPO_SEGURIDAD_MINIMO_BOMBA_MS;
   }
 
   unsigned long estimadoMs = (unsigned long)((litrosUtiles / caudalBombaLpm) * 60000.0f * FACTOR_SEGURIDAD_BOMBA);
-  if (estimadoMs < TIEMPO_SEGURIDAD_MINIMO_BOMBA_MS) {
-    estimadoMs = TIEMPO_SEGURIDAD_MINIMO_BOMBA_MS;
+  if (estimadoMs < TIEMPO_SEGURIDAD_MINIMO_CALCULADO_MS) {
+    estimadoMs = TIEMPO_SEGURIDAD_MINIMO_CALCULADO_MS;
   }
 
   return estimadoMs;
@@ -503,6 +499,8 @@ void loop() {
   distCisterna = medirDistancia(PIN_TRIG_CISTERNA, PIN_ECHO_CISTERNA);
   distTanque = medirDistancia(PIN_TRIG_TANQUE, PIN_ECHO_TANQUE);
 
+  bool usaCapacidadCalculadaCisterna = (diametroCisternaCm > 0 && alturaCisternaCm > 0);
+  bool usaCapacidadCalculadaTanque = (diametroTanqueCm > 0 && alturaTanqueCm > 0);
   int capacidadCisternaLitros = calcularCapacidadCilindricaLitros(diametroCisternaCm, alturaCisternaCm, CAPACIDAD_CISTERNA_FALLBACK_LITROS);
   int capacidadTanqueLitros = calcularCapacidadCilindricaLitros(diametroTanqueCm, alturaTanqueCm, CAPACIDAD_TANQUE_FALLBACK_LITROS);
   int tanqueObjetivoLitrosActual = constrain(tanqueObjetivoLitros, 1, capacidadTanqueLitros);
@@ -513,6 +511,10 @@ void loop() {
   int pctTanque = calcularPorcentajeDesdeDistancia(distTanque, tanqueDistanciaLlenoCm, tanqueDistanciaVacioCm);
   int litrosCisterna = map(pctCisterna, 0, 100, 0, capacidadCisternaLitros);
   int litrosTanque = map(pctTanque, 0, 100, 0, capacidadTanqueLitros);
+  int reservaLitrosCisterna = (int)(capacidadCisternaLitros * (cisternaReservaPorcentaje / 100.0f));
+  int litrosDisponiblesCisterna = max(litrosCisterna - reservaLitrosCisterna, 0);
+  int litrosDisponiblesCisternaEstimados = max(capacidadCisternaLitros - reservaLitrosCisterna, 1);
+  int litrosParaObjetivoTanque = max(tanqueObjetivoLitrosActual - litrosTanque, 0);
   actualizarHistogramaConsumo(litrosTanque);
 
   // --- LÓGICA AUTOMÁTICA DE LA BOMBA ---
@@ -547,8 +549,17 @@ void loop() {
   // --- CONTROL DE TIEMPO Y TEMPORIZADOR ---
   if (motorEncendido) {
     if (tiempoInicioBomba == 0) {
-      tiempoInicioBomba = millis(); 
-      tiempoMaximoBombaMs = calcularTiempoMaximoBombaMs(capacidadCisternaLitros, capacidadTanqueLitros);
+      tiempoInicioBomba = millis();
+      // Si la lectura instantánea de cisterna da cero, usa un estimado por capacidad
+      // para evitar caer al límite fijo de 10 min en manual.
+      int litrosUtilesCalculo = max(litrosDisponiblesCisterna, litrosDisponiblesCisternaEstimados);
+      if (!releManualDirecto && modoManual == 0) {
+        litrosUtilesCalculo = min(litrosDisponiblesCisterna, max(litrosParaObjetivoTanque, 1));
+        if (litrosUtilesCalculo <= 0) {
+          litrosUtilesCalculo = min(litrosDisponiblesCisternaEstimados, max(litrosParaObjetivoTanque, 1));
+        }
+      }
+      tiempoMaximoBombaMs = calcularTiempoMaximoBombaMs(litrosUtilesCalculo);
     }
     tiempoFuncionando = millis() - tiempoInicioBomba;
 
@@ -694,7 +705,17 @@ void loop() {
               client.println("<p style='margin:0 0 6px 0; color:#666;'>Arranque tanque: <strong>" + String(tanqueArranquePorcentaje) + "%</strong></p>");
               client.println("<p style='margin:0 0 6px 0; color:#666;'>Objetivo tanque: <strong>" + String(tanqueObjetivoLitrosActual) + " L</strong> (<strong>" + String(tanqueObjetivoPctActual) + "%</strong>)</p>");
               client.println("<p style='margin:0 0 6px 0; color:#666;'>Reserva cisterna: <strong>" + String(cisternaReservaPorcentaje) + "%</strong></p>");
-              client.println("<p style='margin:0 0 10px 0; color:#666;'>Si diámetro y altura están en cero, se usa capacidad de respaldo.</p>");
+              if (usaCapacidadCalculadaTanque && usaCapacidadCalculadaCisterna) {
+                client.println("<p style='margin:0 0 10px 0; color:#1b5e20;'>Capacidades calculadas por diámetro y altura.</p>");
+              } else {
+                String respaldo = "";
+                if (!usaCapacidadCalculadaTanque) respaldo += "tanque";
+                if (!usaCapacidadCalculadaCisterna) {
+                  if (respaldo.length() > 0) respaldo += " y ";
+                  respaldo += "cisterna";
+                }
+                client.println("<p style='margin:0 0 10px 0; color:#666;'>Usando capacidad de respaldo en: <strong>" + respaldo + "</strong>.</p>");
+              }
               client.println("<a href='/log' class='btn btn-auto'>VER LOG</a>");
               client.println("<a href='/config/cambiar_wifi' class='btn btn-auto'>CAMBIAR WIFI</a>");
               client.println("<a href='/config/borrar_datos' class='btn btn-warn'>BORRAR TODO</a>");
