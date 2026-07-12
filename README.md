@@ -110,3 +110,5 @@ Si dejas todo comentado, seguirá usando el modo simultáneo del portal (DHCP po
 ![alt text](wokwi-simulator.png)
 ![alt text](arduino-run.png)
 ![alt text](app.jpg)
+![alt text](config.jpg)
+![alt text](log.jpg)
