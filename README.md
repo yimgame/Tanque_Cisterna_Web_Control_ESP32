@@ -47,6 +47,15 @@ La interfaz web ya no depende de editar manualmente `ssid` y `password`. La red 
 
 Para cambiar credenciales guardadas, entra a la ruta oculta `http://tanque.local/config` (o `http://IP_LOCAL/config`) y usa la opción **CAMBIAR WIFI**.
 
+En esa misma pantalla también puedes guardar la configuración de control del sistema:
+
+- Diámetro y altura de tanque y cisterna.
+- Caudal de la bomba en L/min.
+- Distancia de lleno y vacío para tanque y cisterna.
+- Distancia actual medida por cada sensor.
+
+El sketch calcula la capacidad de cada depósito a partir de diámetro y altura, y usa la calibración de distancias para determinar los arranques y paradas.
+
 En esa misma ruta `/config` tienes el acceso a **VER LOG**, que abre `http://tanque.local/log`.
 
 La conexión queda en DHCP por defecto para que el autoconectado sea más estable, pero ahora también puedes cargar IP manual desde el mismo portal.
