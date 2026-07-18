@@ -7,7 +7,7 @@
 #include <time.h>
 
 // Pines Cisterna (Abajo)
-const int PIN_TRIG_CISTERNA = 5;
+const int PIN_TRIG_CISTERNA = 4;
 const int PIN_ECHO_CISTERNA = 18;
 
 // Pines Tanque (Arriba)
@@ -18,8 +18,8 @@ const int PIN_ECHO_TANQUE = 22;
 const int PIN_MOTOR = 2;
 
 // --- CONFIGURACIÓN DEL SISTEMA ---
-const int CAPACIDAD_CISTERNA_FALLBACK_LITROS = 500;
-const int CAPACIDAD_TANQUE_FALLBACK_LITROS = 1000;
+const int CAPACIDAD_CISTERNA_FALLBACK_LITROS = 100;
+const int CAPACIDAD_TANQUE_FALLBACK_LITROS = 100;
 const int CISTERNA_DISTANCIA_LLENO_DEF = 20;
 const int CISTERNA_DISTANCIA_VACIO_DEF = 75;
 const int TANQUE_DISTANCIA_LLENO_DEF = 20;
@@ -33,6 +33,8 @@ const int TANQUE_ARRANQUE_DEF_PORCENTAJE = 50;
 const int TANQUE_OBJETIVO_DEF_PORCENTAJE = 80;
 const int CISTERNA_RESERVA_DEF_PORCENTAJE = 20;
 const int TANQUE_OBJETIVO_DEF_LITROS = 800;
+const int CAPTURAS_PROMEDIO_DEF = 10;
+const int CAPTURAS_PROMEDIO_MAX = 50;
 
 int diametroCisternaCm = DIAMETRO_CISTERNA_DEF_CM;
 int alturaCisternaCm = ALTURA_CISTERNA_DEF_CM;
@@ -47,6 +49,14 @@ int cisternaDistanciaLlenoCm = CISTERNA_DISTANCIA_LLENO_DEF;
 int cisternaDistanciaVacioCm = CISTERNA_DISTANCIA_VACIO_DEF;
 int tanqueDistanciaLlenoCm = TANQUE_DISTANCIA_LLENO_DEF;
 int tanqueDistanciaVacioCm = TANQUE_DISTANCIA_VACIO_DEF;
+int capturasPromedio = CAPTURAS_PROMEDIO_DEF;
+
+int muestrasCisterna[CAPTURAS_PROMEDIO_MAX] = {0};
+int muestrasTanque[CAPTURAS_PROMEDIO_MAX] = {0};
+long sumaMuestrasCisterna = 0;
+long sumaMuestrasTanque = 0;
+int indiceMuestra = 0;
+int cantidadMuestras = 0;
 
 // El tiempo de seguridad se calcula con la capacidad útil y el caudal,
 // pero conservando un mínimo para evitar cortes demasiado agresivos por ruido.
@@ -64,6 +74,8 @@ unsigned long tiempoFuncionando = 0;
 unsigned long tiempoMaximoBombaMs = TIEMPO_SEGURIDAD_MINIMO_BOMBA_MS;
 String accesoWebIp = "";
 String accesoWebMdns = "http://tanque.local/";
+unsigned long ultimaSalidaSerialSensores = 0;
+const unsigned long INTERVALO_SERIAL_SENSORES_MS = 1000;
 
 // Control manual por Web (0 = Automático, 1 = Forzar Encendido, 2 = Forzar Apagado)
 int modoManual = 0;
@@ -280,6 +292,13 @@ int porcentajeDesdeLitros(int litros, int capacidadLitros) {
   return porcentaje;
 }
 
+void reiniciarPromedioSensores() {
+  sumaMuestrasCisterna = 0;
+  sumaMuestrasTanque = 0;
+  indiceMuestra = 0;
+  cantidadMuestras = 0;
+}
+
 bool valorConsultaRecibido(const String& ruta, const String& nombre) {
   return obtenerParametroConsulta(ruta, nombre).length() > 0;
 }
@@ -297,6 +316,7 @@ bool guardarConfiguracionDesdeRuta(const String& ruta, String& error) {
   int nuevoTanqueDistanciaVacioCm = leerParametroEntero(ruta, "tanque_vacio", tanqueDistanciaVacioCm, 0, 999);
   int nuevoCisternaDistanciaLlenoCm = leerParametroEntero(ruta, "cisterna_lleno", cisternaDistanciaLlenoCm, 0, 999);
   int nuevoCisternaDistanciaVacioCm = leerParametroEntero(ruta, "cisterna_vacio", cisternaDistanciaVacioCm, 0, 999);
+  int nuevasCapturasPromedio = leerParametroEntero(ruta, "capturas_promedio", capturasPromedio, 1, CAPTURAS_PROMEDIO_MAX);
 
   int nuevaCapacidadTanqueLitros = calcularCapacidadCilindricaLitros(nuevoDiametroTanqueCm, nuevaAlturaTanqueCm, CAPACIDAD_TANQUE_FALLBACK_LITROS);
   int nuevaCapacidadCisternaLitros = calcularCapacidadCilindricaLitros(nuevoDiametroCisternaCm, nuevaAlturaCisternaCm, CAPACIDAD_CISTERNA_FALLBACK_LITROS);
@@ -336,6 +356,10 @@ bool guardarConfiguracionDesdeRuta(const String& ruta, String& error) {
   tanqueDistanciaVacioCm = nuevoTanqueDistanciaVacioCm;
   cisternaDistanciaLlenoCm = nuevoCisternaDistanciaLlenoCm;
   cisternaDistanciaVacioCm = nuevoCisternaDistanciaVacioCm;
+  if (capturasPromedio != nuevasCapturasPromedio) {
+    capturasPromedio = nuevasCapturasPromedio;
+    reiniciarPromedioSensores();
+  }
 
   preferencias.begin("tanquecfg", false);
   preferencias.putInt("diam_tanque", diametroTanqueCm);
@@ -351,6 +375,7 @@ bool guardarConfiguracionDesdeRuta(const String& ruta, String& error) {
   preferencias.putInt("tanque_vacio", tanqueDistanciaVacioCm);
   preferencias.putInt("cisterna_lleno", cisternaDistanciaLlenoCm);
   preferencias.putInt("cisterna_vacio", cisternaDistanciaVacioCm);
+  preferencias.putInt("capt_prom", capturasPromedio);
   preferencias.end();
   error = "";
   return true;
@@ -371,6 +396,7 @@ void cargarConfiguracion() {
   tanqueDistanciaVacioCm = preferencias.getInt("tanque_vacio", TANQUE_DISTANCIA_VACIO_DEF);
   cisternaDistanciaLlenoCm = preferencias.getInt("cisterna_lleno", CISTERNA_DISTANCIA_LLENO_DEF);
   cisternaDistanciaVacioCm = preferencias.getInt("cisterna_vacio", CISTERNA_DISTANCIA_VACIO_DEF);
+  capturasPromedio = constrain(preferencias.getInt("capt_prom", CAPTURAS_PROMEDIO_DEF), 1, CAPTURAS_PROMEDIO_MAX);
   preferencias.end();
 }
 
@@ -388,6 +414,8 @@ void restaurarValoresPorDefecto() {
   tanqueDistanciaVacioCm = TANQUE_DISTANCIA_VACIO_DEF;
   cisternaDistanciaLlenoCm = CISTERNA_DISTANCIA_LLENO_DEF;
   cisternaDistanciaVacioCm = CISTERNA_DISTANCIA_VACIO_DEF;
+  capturasPromedio = CAPTURAS_PROMEDIO_DEF;
+  reiniciarPromedioSensores();
 }
 
 void borrarTodoPersistido() {
@@ -445,6 +473,24 @@ int medirDistancia(int pinTrig, int pinEcho) {
   return duracion * 0.034 / 2;
 }
 
+void agregarMuestrasSensores(int lecturaCisterna, int lecturaTanque) {
+  if (cantidadMuestras >= capturasPromedio) {
+    sumaMuestrasCisterna -= muestrasCisterna[indiceMuestra];
+    sumaMuestrasTanque -= muestrasTanque[indiceMuestra];
+  } else {
+    cantidadMuestras++;
+  }
+
+  muestrasCisterna[indiceMuestra] = lecturaCisterna;
+  muestrasTanque[indiceMuestra] = lecturaTanque;
+  sumaMuestrasCisterna += lecturaCisterna;
+  sumaMuestrasTanque += lecturaTanque;
+  indiceMuestra = (indiceMuestra + 1) % capturasPromedio;
+
+  distCisterna = (int)(sumaMuestrasCisterna / cantidadMuestras);
+  distTanque = (int)(sumaMuestrasTanque / cantidadMuestras);
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -496,8 +542,9 @@ void setup() {
 }
 
 void loop() {
-  distCisterna = medirDistancia(PIN_TRIG_CISTERNA, PIN_ECHO_CISTERNA);
-  distTanque = medirDistancia(PIN_TRIG_TANQUE, PIN_ECHO_TANQUE);
+  int lecturaCisterna = medirDistancia(PIN_TRIG_CISTERNA, PIN_ECHO_CISTERNA);
+  int lecturaTanque = medirDistancia(PIN_TRIG_TANQUE, PIN_ECHO_TANQUE);
+  agregarMuestrasSensores(lecturaCisterna, lecturaTanque);
 
   bool usaCapacidadCalculadaCisterna = (diametroCisternaCm > 0 && alturaCisternaCm > 0);
   bool usaCapacidadCalculadaTanque = (diametroTanqueCm > 0 && alturaTanqueCm > 0);
@@ -513,13 +560,27 @@ void loop() {
   int litrosTanque = map(pctTanque, 0, 100, 0, capacidadTanqueLitros);
   int reservaLitrosCisterna = (int)(capacidadCisternaLitros * (cisternaReservaPorcentaje / 100.0f));
   int litrosDisponiblesCisterna = max(litrosCisterna - reservaLitrosCisterna, 0);
-  int litrosDisponiblesCisternaEstimados = max(capacidadCisternaLitros - reservaLitrosCisterna, 1);
   int litrosParaObjetivoTanque = max(tanqueObjetivoLitrosActual - litrosTanque, 0);
   actualizarHistogramaConsumo(litrosTanque);
 
+  // Salida periódica para el monitor serie USB, sin saturar el puerto.
+  if (millis() - ultimaSalidaSerialSensores >= INTERVALO_SERIAL_SENSORES_MS) {
+    ultimaSalidaSerialSensores = millis();
+    Serial.print("Tanque: ");
+    Serial.print(distTanque);
+    Serial.print(" cm (");
+    Serial.print(pctTanque);
+    Serial.print("%) | Cisterna: ");
+    Serial.print(distCisterna);
+    Serial.print(" cm (");
+    Serial.print(pctCisterna);
+    Serial.println("%)");
+  }
+
   // --- LÓGICA AUTOMÁTICA DE LA BOMBA ---
-  bool cisternaTieneAgua = (pctCisterna > cisternaReservaPorcentaje);
-  bool tanqueNecesitaCarga = (pctTanque <= tanqueArranquePorcentaje);
+  bool promedioListo = (cantidadMuestras >= capturasPromedio);
+  bool cisternaTieneAgua = promedioListo && (pctCisterna > cisternaReservaPorcentaje);
+  bool tanqueNecesitaCarga = promedioListo && (pctTanque <= tanqueArranquePorcentaje);
   bool tanqueAlcanzoObjetivo = (pctTanque >= tanqueObjetivoPctActual) || (litrosTanque >= tanqueObjetivoLitrosActual);
   bool motorDeberiaEncender = motorEncendido;
 
@@ -550,14 +611,12 @@ void loop() {
   if (motorEncendido) {
     if (tiempoInicioBomba == 0) {
       tiempoInicioBomba = millis();
-      // Si la lectura instantánea de cisterna da cero, usa un estimado por capacidad
-      // para evitar caer al límite fijo de 10 min en manual.
-      int litrosUtilesCalculo = max(litrosDisponiblesCisterna, litrosDisponiblesCisternaEstimados);
+      // El límite parte siempre del agua útil realmente medida en la cisterna.
+      // Esto también protege el arranque manual ante una cisterna casi vacía.
+      int litrosUtilesCalculo = max(litrosDisponiblesCisterna, 1);
       if (!releManualDirecto && modoManual == 0) {
         litrosUtilesCalculo = min(litrosDisponiblesCisterna, max(litrosParaObjetivoTanque, 1));
-        if (litrosUtilesCalculo <= 0) {
-          litrosUtilesCalculo = min(litrosDisponiblesCisternaEstimados, max(litrosParaObjetivoTanque, 1));
-        }
+        litrosUtilesCalculo = max(litrosUtilesCalculo, 1);
       }
       tiempoMaximoBombaMs = calcularTiempoMaximoBombaMs(litrosUtilesCalculo);
     }
@@ -590,11 +649,9 @@ void loop() {
           if (currentLine.length() == 0) {
             String ipCliente = client.remoteIP().toString();
             String ruta = obtenerRutaSolicitud(request);
-            bool esPaginaPrincipal = (ruta == "/" || ruta.length() == 0);
             bool enPaginaConfig = ruta.startsWith("/config");
             bool enPaginaLog = ruta.startsWith("/log");
             bool configGuardada = false;
-            int intervaloAutoRefreshMs = esPaginaPrincipal ? 15000 : 0;
 
             // --- FILTRO DE SEGURIDAD PARA BOTONES MANUALES ---
             if (ruta.startsWith("/ENCENDER")) {
@@ -635,6 +692,34 @@ void loop() {
               registrarEvento("BORRAR_DATOS", ipCliente);
             }
 
+            // Respuesta pequeña para actualizar la web sin recargar la página completa.
+            if (ruta == "/api/estado") {
+              String estadoBomba = bloqueoSeguridad ? "BLOQUEO DE SEGURIDAD" : (motorEncendido ? "BOMBEANDO AGUA..." : "MOTOR APAGADO");
+              String modoApi = releManualDirecto ? "MANUAL DIRECTO" : ((modoManual == 0) ? "AUTOMATICO" : ((modoManual == 1) ? "MANUAL ENCENDIDO" : "MANUAL APAGADO"));
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-Type: application/json; charset=utf-8");
+              client.println("Cache-Control: no-store");
+              client.println("Connection: close");
+              client.println();
+              client.print("{\"distTanque\":"); client.print(distTanque);
+              client.print(",\"pctTanque\":"); client.print(pctTanque);
+              client.print(",\"litrosTanque\":"); client.print(litrosTanque);
+              client.print(",\"distCisterna\":"); client.print(distCisterna);
+              client.print(",\"pctCisterna\":"); client.print(pctCisterna);
+              client.print(",\"litrosCisterna\":"); client.print(litrosCisterna);
+              client.print(",\"capturasPromedio\":"); client.print(capturasPromedio);
+              client.print(",\"promedioListo\":"); client.print(cantidadMuestras >= capturasPromedio ? "true" : "false");
+              client.print(",\"motorEncendido\":"); client.print(motorEncendido ? "true" : "false");
+              client.print(",\"bloqueo\":"); client.print(bloqueoSeguridad ? "true" : "false");
+              client.print(",\"tiempoActivoSeg\":"); client.print(tiempoFuncionando / 1000UL);
+              client.print(",\"limiteEstimadoSeg\":"); client.print(tiempoMaximoBombaMs / 1000UL);
+              client.print(",\"estadoBomba\":\""); client.print(estadoBomba);
+              client.print("\",\"modo\":\""); client.print(modoApi);
+              client.print("\",\"uptime\":"); client.print(millis() / 1000UL);
+              client.println("}");
+              break;
+            }
+
             client.println("HTTP/1.1 200 OK");
             client.println("Content-type:text/html");
             client.println("Connection: close");
@@ -645,17 +730,13 @@ void loop() {
             client.println("<title>Monitor de Agua ESP32</title>");
             client.println("<style>body{font-family:Arial,sans-serif;text-align:center;background:#f4f4f9;padding:10px;} .card{background:white;padding:15px;border-radius:15px;margin:12px auto;max-width:400px;box-shadow:0 4px 8px rgba(0,0,0,0.1);} h1{color:#0288d1;} .status{font-weight:bold;padding:10px;border-radius:5px;margin-top:10px;} .on{background:#c8e6c9;color:#256029;} .off{background:#ffcdd2;color:#c62828;} .alert{background:#ffe0b2;color:#e65100;} .val{font-size:24px;color:#0288d1;font-weight:bold;} .btn{display:inline-block;width:125px;box-sizing:border-box;text-align:center;padding:10px 5px;margin:5px;font-size:14px;font-weight:bold;color:white;text-decoration:none;border-radius:5px;box-shadow:0 2px 4px rgba(0,0,0,0.2);} .btn-on{background:#4caf50;} .btn-off{background:#f44336;} .btn-auto{background:#2196f3;} .btn-warn{background:#d32f2f;} .modal{display:none;position:fixed;z-index:999;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.55);} .modal-content{background:#fff;border-radius:12px;max-width:360px;margin:15% auto;padding:16px;box-shadow:0 8px 20px rgba(0,0,0,0.25);} .modal-title{margin:0 0 8px 0;color:#b71c1c;font-size:18px;} .modal-text{margin:0 0 12px 0;color:#333;font-size:14px;line-height:1.35;}</style>");
 
-            if (intervaloAutoRefreshMs > 0) {
-              client.println("<script>setInterval(function(){location.reload();}, " + String(intervaloAutoRefreshMs) + ");function openConfirmModal(){document.getElementById('confirmModal').style.display='block';document.body.style.overflow='hidden';}function closeConfirmModal(){document.getElementById('confirmModal').style.display='none';document.body.style.overflow='';}function confirmarArranqueManual(){window.location.href='/ENCENDER';}function bindModalEvents(){var m=document.getElementById('confirmModal');if(!m){return;}window.addEventListener('click',function(e){if(e.target===m){closeConfirmModal();}});document.addEventListener('keydown',function(e){if(e.key==='Escape'||e.key==='Esc'){closeConfirmModal();}});}document.addEventListener('DOMContentLoaded',bindModalEvents);</script>");
-            } else {
-              client.println("<script>function openConfirmModal(){document.getElementById('confirmModal').style.display='block';document.body.style.overflow='hidden';}function closeConfirmModal(){document.getElementById('confirmModal').style.display='none';document.body.style.overflow='';}function confirmarArranqueManual(){window.location.href='/ENCENDER';}function bindModalEvents(){var m=document.getElementById('confirmModal');if(!m){return;}window.addEventListener('click',function(e){if(e.target===m){closeConfirmModal();}});document.addEventListener('keydown',function(e){if(e.key==='Escape'||e.key==='Esc'){closeConfirmModal();}});}document.addEventListener('DOMContentLoaded',bindModalEvents);</script>");
-            }
+            client.println("<script>function openConfirmModal(){document.getElementById('confirmModal').style.display='block';document.body.style.overflow='hidden';}function closeConfirmModal(){document.getElementById('confirmModal').style.display='none';document.body.style.overflow='';}function confirmarArranqueManual(){window.location.href='/ENCENDER';}function poner(id,v){var e=document.getElementById(id);if(e)e.textContent=v;}function formatoTiempo(s){s=Number(s)||0;return Math.floor(s/60)+' min '+(s%60)+' seg';}function actualizarEstado(){fetch('/api/estado',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error();return r.json();}).then(function(d){poner('pctTanque',d.pctTanque+' %');poner('distTanque',d.distTanque+' cm');poner('litrosTanque',d.litrosTanque+' Litros');poner('pctCisterna',d.pctCisterna+' %');poner('distCisterna',d.distCisterna+' cm');poner('litrosCisterna',d.litrosCisterna+' Litros');poner('modoActual','Modo actual: '+d.modo);poner('tiempoActivo',formatoTiempo(d.tiempoActivoSeg));poner('limiteEstimado',formatoTiempo(d.limiteEstimadoSeg));var tiempos=document.getElementById('tiemposBomba');if(tiempos)tiempos.style.display=d.motorEncendido?'block':'none';var b=document.getElementById('estadoBomba');if(b){b.textContent=d.estadoBomba;b.className='status '+(d.motorEncendido?'on':'off')+(d.bloqueo?' alert':'');}var consola=document.getElementById('monitorSerial');if(consola){var ahora=new Date().toLocaleTimeString();consola.textContent+='['+ahora+'] Tanque: '+d.distTanque+' cm ('+d.pctTanque+'%) | Cisterna: '+d.distCisterna+' cm ('+d.pctCisterna+'%)\\n';var lineas=consola.textContent.split('\\n');if(lineas.length>31)consola.textContent=lineas.slice(-31).join('\\n');consola.scrollTop=consola.scrollHeight;}}).catch(function(){});}function bindModalEvents(){var m=document.getElementById('confirmModal');if(m){window.addEventListener('click',function(e){if(e.target===m)closeConfirmModal();});document.addEventListener('keydown',function(e){if(e.key==='Escape'||e.key==='Esc')closeConfirmModal();});}actualizarEstado();setInterval(actualizarEstado,1000);}document.addEventListener('DOMContentLoaded',bindModalEvents);</script>");
             client.println("</head><body>");
             client.println("<h1>💧 Control de Agua 💧</h1>");
             // client.println("<h1>💧 ESP32 💧</h1>");
 
-            client.println("<div class='card'><h2>Tanque Superior (" + String(capacidadTanqueLitros) + "L)</h2><p class='val'>" + String(pctTanque) + " %</p><p>Distancia actual: <strong>" + String(distTanque) + " cm</strong></p><p>Aprox: <strong>" + String(litrosTanque) + " Litros</strong></p></div>");
-            client.println("<div class='card'><h2>Cisterna (" + String(capacidadCisternaLitros) + "L)</h2><p class='val'>" + String(pctCisterna) + " %</p><p>Distancia actual: <strong>" + String(distCisterna) + " cm</strong></p><p>Aprox: <strong>" + String(litrosCisterna) + " Litros</strong></p></div>");
+            client.println("<div class='card'><h2>Tanque Superior (" + String(capacidadTanqueLitros) + "L)</h2><p id='pctTanque' class='val'>" + String(pctTanque) + " %</p><p>Distancia actual: <strong id='distTanque'>" + String(distTanque) + " cm</strong></p><p>Aprox: <strong id='litrosTanque'>" + String(litrosTanque) + " Litros</strong></p></div>");
+            client.println("<div class='card'><h2>Cisterna (" + String(capacidadCisternaLitros) + "L)</h2><p id='pctCisterna' class='val'>" + String(pctCisterna) + " %</p><p>Distancia actual: <strong id='distCisterna'>" + String(distCisterna) + " cm</strong></p><p>Aprox: <strong id='litrosCisterna'>" + String(litrosCisterna) + " Litros</strong></p></div>");
 
             client.println("<div class='card'><h2>Datos de Conexión</h2>");
             client.println("<p style='margin:6px 0;'>IP local: <strong>" + accesoWebIp + "</strong></p>");
@@ -667,21 +748,19 @@ void loop() {
 
             client.println("<div class='card'><h2>Estado de la Bomba</h2>");
             if (bloqueoSeguridad) {
-              client.println("<div class='status off alert'>🚨 BLOQUEO DE SEGURIDAD (Excedió el límite estimado)</div>");
+              client.println("<div id='estadoBomba' class='status off alert'>🚨 BLOQUEO DE SEGURIDAD (Excedió el límite estimado)</div>");
             } else if (motorEncendido) {
-              unsigned long seg = (tiempoFuncionando / 1000) % 60;
-              unsigned long min = (tiempoFuncionando / 1000) / 60;
-              unsigned long segMax = (tiempoMaximoBombaMs / 1000) % 60;
-              unsigned long minMax = (tiempoMaximoBombaMs / 1000) / 60;
-              client.println("<div class='status on'>BOMBEANDO AGUA...</div>");
-              client.println("<p style='margin-top:10px;'>Tiempo activo: <strong>" + String(min) + " min " + String(seg) + " seg</strong></p>");
-              client.println("<p style='margin-top:6px;'>Límite estimado: <strong>" + String(minMax) + " min " + String(segMax) + " seg</strong></p>");
+              client.println("<div id='estadoBomba' class='status on'>BOMBEANDO AGUA...</div>");
             } else {
-              client.println("<div class='status off'>MOTOR APAGADO</div>");
+              client.println("<div id='estadoBomba' class='status off'>MOTOR APAGADO</div>");
             }
+            client.println("<div id='tiemposBomba' style='display:" + String(motorEncendido ? "block" : "none") + ";'>");
+            client.println("<p style='margin-top:10px;'>Tiempo activo: <strong id='tiempoActivo'>" + String((tiempoFuncionando / 1000UL) / 60) + " min " + String((tiempoFuncionando / 1000UL) % 60) + " seg</strong></p>");
+            client.println("<p style='margin-top:6px;'>Límite estimado: <strong id='limiteEstimado'>" + String((tiempoMaximoBombaMs / 1000UL) / 60) + " min " + String((tiempoMaximoBombaMs / 1000UL) % 60) + " seg</strong></p>");
+            client.println("</div>");
 
             String modoTexto = releManualDirecto ? "MANUAL DIRECTO (RELÉ FORZADO)" : ((modoManual == 0) ? "AUTOMÁTICO" : ((modoManual == 1) ? "MANUAL (ENCENDIDO)" : "MANUAL (APAGADO)"));
-            client.println("<p style='font-size:12px; color:#666;'>Modo actual: " + modoTexto + "</p>");
+            client.println("<p id='modoActual' style='font-size:12px; color:#666;'>Modo actual: " + modoTexto + "</p>");
             client.println("</div>");
 
             client.println("<div class='card'><h2>Controles Manuales</h2>");
@@ -692,6 +771,7 @@ void loop() {
             client.println("</div>");
 
             if (enPaginaConfig) {
+              client.println("<div class='card'><h2>Monitor de sensores en vivo</h2><pre id='monitorSerial' style='height:190px;overflow:auto;text-align:left;background:#111;color:#7CFC00;padding:10px;border-radius:8px;font:12px monospace;white-space:pre-wrap;margin:0;'>Conectando...\n</pre><p style='font-size:11px;color:#666;'>Actualiza cada segundo sin recargar la página.</p></div>");
               client.println("<div class='card'><h2>Configuración</h2>");
               if (configGuardada) {
                 client.println("<p style='margin:0 0 10px 0; color:#1b5e20; font-weight:bold;'>Configuración guardada.</p>");
@@ -705,6 +785,7 @@ void loop() {
               client.println("<p style='margin:0 0 6px 0; color:#666;'>Arranque tanque: <strong>" + String(tanqueArranquePorcentaje) + "%</strong></p>");
               client.println("<p style='margin:0 0 6px 0; color:#666;'>Objetivo tanque: <strong>" + String(tanqueObjetivoLitrosActual) + " L</strong> (<strong>" + String(tanqueObjetivoPctActual) + "%</strong>)</p>");
               client.println("<p style='margin:0 0 6px 0; color:#666;'>Reserva cisterna: <strong>" + String(cisternaReservaPorcentaje) + "%</strong></p>");
+              client.println("<p style='margin:0 0 6px 0; color:#666;'>Promedio de sensores: <strong>" + String(capturasPromedio) + " capturas</strong></p>");
               if (usaCapacidadCalculadaTanque && usaCapacidadCalculadaCisterna) {
                 client.println("<p style='margin:0 0 10px 0; color:#1b5e20;'>Capacidades calculadas por diámetro y altura.</p>");
               } else {
@@ -729,6 +810,7 @@ void loop() {
               client.println("<p style='text-align:left; margin:8px 0 4px 0;'>Diámetro cisterna (cm)</p><input type='number' name='diam_cisterna' value='" + String(diametroCisternaCm) + "' min='0' max='500' style='width:100%; padding:10px; box-sizing:border-box;'>");
               client.println("<p style='text-align:left; margin:8px 0 4px 0;'>Altura cisterna (cm)</p><input type='number' name='alto_cisterna' value='" + String(alturaCisternaCm) + "' min='0' max='500' style='width:100%; padding:10px; box-sizing:border-box;'>");
               client.println("<p style='text-align:left; margin:8px 0 4px 0;'>Caudal bomba (L/min)</p><input type='number' step='0.1' name='caudal_bomba' value='" + String(caudalBombaLpm, 1) + "' min='0.1' max='9999' style='width:100%; padding:10px; box-sizing:border-box;'>");
+              client.println("<p style='text-align:left; margin:8px 0 4px 0;'>Capturas para promedio</p><input type='number' name='capturas_promedio' value='" + String(capturasPromedio) + "' min='1' max='" + String(CAPTURAS_PROMEDIO_MAX) + "' style='width:100%; padding:10px; box-sizing:border-box;'><p style='font-size:11px;color:#666;text-align:left;margin-top:4px;'>La bomba espera este promedio antes de aplicar la lógica automática.</p>");
               client.println("<p style='text-align:left; margin:8px 0 4px 0;'>Arranque tanque (%)</p><input type='number' name='tanque_arranque_pct' value='" + String(tanqueArranquePorcentaje) + "' min='1' max='99' style='width:100%; padding:10px; box-sizing:border-box;'>");
               client.println("<p style='text-align:left; margin:8px 0 4px 0;'>Objetivo de carga tanque (L)</p><input type='number' name='tanque_objetivo_litros' value='" + String(tanqueObjetivoLitros) + "' min='1' max='99999' style='width:100%; padding:10px; box-sizing:border-box;'>");
               client.println("<p style='text-align:left; margin:8px 0 4px 0;'>Objetivo tanque de respaldo (%)</p><input type='number' name='tanque_objetivo_pct' value='" + String(tanqueObjetivoPorcentaje) + "' min='1' max='100' style='width:100%; padding:10px; box-sizing:border-box;'>");
