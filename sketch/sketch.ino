@@ -341,6 +341,23 @@ unsigned long obtenerCooldownRestanteMs() {
   return proximoArranquePermitidoMs - ahora;
 }
 
+String obtenerTextoEstadoBomba() {
+  if (bloqueoSeguridad) {
+    return "BLOQUEO DE SEGURIDAD";
+  }
+
+  unsigned long cooldownRestanteMs = obtenerCooldownRestanteMs();
+  if (cooldownRestanteMs > 0 && !motorEncendido && modoManual == 0 && !releManualDirecto) {
+    return "EN COOLDOWN - restan " + String((cooldownRestanteMs / 1000UL) / 60) + " min " + String((cooldownRestanteMs / 1000UL) % 60) + " seg";
+  }
+
+  if (motorEncendido) {
+    return "BOMBEANDO AGUA...";
+  }
+
+  return "MOTOR APAGADO";
+}
+
 bool guardarConfiguracionDesdeRuta(const String& ruta, String& error) {
   int nuevoDiametroTanqueCm = leerParametroEntero(ruta, "diam_tanque", diametroTanqueCm, 0, 500);
   int nuevaAlturaTanqueCm = leerParametroEntero(ruta, "alto_tanque", alturaTanqueCm, 0, 500);
@@ -756,7 +773,6 @@ void loop() {
 
             // Respuesta pequeña para actualizar la web sin recargar la página completa.
             if (ruta == "/api/estado") {
-              String estadoBomba = bloqueoSeguridad ? "BLOQUEO DE SEGURIDAD" : (motorEncendido ? "BOMBEANDO AGUA..." : "MOTOR APAGADO");
               String modoApi = releManualDirecto ? "MANUAL DIRECTO" : ((modoManual == 0) ? "AUTOMATICO" : ((modoManual == 1) ? "MANUAL ENCENDIDO" : "MANUAL APAGADO"));
               client.println("HTTP/1.1 200 OK");
               client.println("Content-Type: application/json; charset=utf-8");
@@ -777,7 +793,7 @@ void loop() {
               client.print(",\"limiteEstimadoSeg\":"); client.print(tiempoMaximoBombaMs / 1000UL);
               client.print(",\"cooldownMin\":"); client.print(tiempoEsperaEntreArranquesMin);
               client.print(",\"cooldownRestanteSeg\":"); client.print(obtenerCooldownRestanteMs() / 1000UL);
-              client.print(",\"estadoBomba\":\""); client.print(estadoBomba);
+              client.print(",\"estadoBomba\":\""); client.print(obtenerTextoEstadoBomba());
               client.print("\",\"modo\":\""); client.print(modoApi);
               client.print("\",\"uptime\":"); client.print(millis() / 1000UL);
               client.println("}");
@@ -812,15 +828,16 @@ void loop() {
             client.println("</div>");
 
             client.println("<div class='card'><h2>Estado de la Bomba</h2>");
+            String estadoBombaTexto = obtenerTextoEstadoBomba();
+            bool estadoBombaEnCooldown = estadoBombaTexto.startsWith("EN COOLDOWN");
             if (bloqueoSeguridad) {
-              client.println("<div id='estadoBomba' class='status off alert'>🚨 BLOQUEO DE SEGURIDAD (Excedió el límite estimado)</div>");
-            } else if (obtenerCooldownRestanteMs() > 0 && !motorEncendido && modoManual == 0 && !releManualDirecto) {
-              unsigned long restanteMs = obtenerCooldownRestanteMs();
-              client.println("<div id='estadoBomba' class='status off alert'>EN COOLDOWN - restan " + String((restanteMs / 1000UL) / 60) + " min " + String((restanteMs / 1000UL) % 60) + " seg</div>");
+              client.println("<div id='estadoBomba' class='status off alert'>🚨 " + estadoBombaTexto + " (Excedió el límite estimado)</div>");
+            } else if (estadoBombaEnCooldown) {
+              client.println("<div id='estadoBomba' class='status off alert'>" + estadoBombaTexto + "</div>");
             } else if (motorEncendido) {
-              client.println("<div id='estadoBomba' class='status on'>BOMBEANDO AGUA...</div>");
+              client.println("<div id='estadoBomba' class='status on'>" + estadoBombaTexto + "</div>");
             } else {
-              client.println("<div id='estadoBomba' class='status off'>MOTOR APAGADO</div>");
+              client.println("<div id='estadoBomba' class='status off'>" + estadoBombaTexto + "</div>");
             }
             client.println("<div id='tiemposBomba' style='display:" + String(motorEncendido ? "block" : "none") + ";'>");
             client.println("<p style='margin-top:10px;'>Tiempo activo: <strong id='tiempoActivo'>" + String((tiempoFuncionando / 1000UL) / 60) + " min " + String((tiempoFuncionando / 1000UL) % 60) + " seg</strong></p>");
